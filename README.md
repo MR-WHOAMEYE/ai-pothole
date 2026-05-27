@@ -1,266 +1,144 @@
-# PotholeIQ — AI-Based Road Damage Depth Assessment & Municipal Priority Repair Management System
+# PotholeIQ
 
-> Spring Boot 3.2 · Java 17 · YOLOv8 ONNX · OpenCV · PostGIS · Brevo SMTP
+PotholeIQ is an open-source production-ready backend for AI-based road damage detection, depth estimation, and municipal repair workflow management.
 
----
+Built with Spring Boot 3.2, Java 17, ONNX (YOLOv8), OpenCV, and PostgreSQL/PostGIS. The service exposes REST APIs for scanning, reporting, crew management and admin analytics.
 
-## Quick Start
+Why this README: it documents how to run locally, deploy to production (Render, Docker), the required environment variables, production caveats, contributing guidelines, and licensing for open-source use.
 
-### 1. Prerequisites
+Table of Contents
+-----------------
+- Project Overview
+- Quick Start (local)
+- Production Deploy (Render, Docker)
+- Configuration & Environment
+- Storage & Model management
+- Security & Operational notes
+- Contributing
+- License
 
-| Tool        | Version  |
-|-------------|----------|
-| Java        | 17+      |
-| Maven       | 3.9+     |
-| PostgreSQL  | Neon DB (already configured) |
+Project Overview
+----------------
+PotholeIQ accepts images (mobile/scanner or single-shot), runs an ONNX-based detector and a severity classifier, stores reports in PostGIS-enabled Postgres, generates complaint PDFs for critical issues, and provides admin/crew endpoints for managing work orders.
 
----
+Quick Start (local development)
+-------------------------------
+Prerequisites
+- Java 17+
+- Maven 3.9+
+- PostgreSQL with PostGIS (Neon or similar)
 
-### 2. Configure `.env`
+Run locally
 
-The `.env` file at the project root is already created with your Neon DB and Brevo credentials.  
-**Complete your Brevo API key** — the `BREVO_API_KEY` field requires the full key from your Brevo dashboard:
-
-```
-PGHOST=ep-long-lab-ap4er6mg.c-7.us-east-1.aws.neon.tech
-PGDATABASE=neondb
-PGUSER=neondb_owner
-PGPASSWORD=my passwd
-PGSSLMODE=require
-PGCHANNELBINDING=require
-
-BREVO_USER=aad072001@smtp-brevo.com
-BREVO_API_KEY=xsmtpsib-<YOUR_FULL_KEY_HERE>
-EMAIL_FROM=fun291167@gmail.com
-```
-
-> ⚠️ **Never commit `.env` to version control.** It is already listed in `.gitignore`.
-
----
-
-### 3. PostGIS Extension (Already Done ✅)
-
-The `postgis` extension is already enabled on your Neon database.
-
----
-
-### 4. Place the YOLOv8 ONNX Model
-
-The AI inference service looks for the model in two locations (first found wins):
-
-**Option A — Classpath (bundled in JAR):**
-```
-src/main/resources/models/pothole_detector.onnx
-```
-
-**Option B — Runtime directory (no rebuild needed):**
-```
-./models/pothole_detector.onnx
-```
-Create the `models/` directory next to where you run the JAR and drop the file there.
-
-> If neither location has the model, the app starts in **STUB mode** — all endpoints work but AI detection returns empty results. A warning is logged on startup.
-
-**Export your model from Ultralytics:**
-```bash
-yolo export model=best.pt format=onnx imgsz=640
-```
-
----
-
-### 5. Run the Application
+1. Create a `.env` at the project root with your DB and mail settings (see Configuration & Environment).
+2. Place the ONNX model at either `src/main/resources/models/pothole_detector.onnx` (bundled) or `./models/pothole_detector.onnx` (runtime).
+3. From the `backend` folder build and run:
 
 ```bash
-# Development
+cd backend
 mvn spring-boot:run
-
-# Or build and run the JAR
+# or build and run JAR
 mvn clean package -DskipTests
 java -jar target/potholeiq-0.0.1-SNAPSHOT.jar
 ```
 
-The server starts on **http://localhost:8080**
+The API listens on `http://localhost:8080` by default.
 
----
+Production Deploy
+-----------------
+Recommended: containerized or platform deployment (Render, Railway, DigitalOcean App Platform, or a small VPS). This repo includes a `render.yaml` configured to deploy only the backend service on Render's free plan.
 
-### 6. Tables Auto-Created
+Render (quick)
+- Ensure `render.yaml` is at repo root (present).
+- On Render dashboard create a new service by connecting your GitHub repo — the `render.yaml` will configure a single Java web service that builds with `mvn clean package -DskipTests` and runs `java -jar target/potholeiq-0.0.1-SNAPSHOT.jar`.
+- Add the environment variables listed in Configuration & Environment via the Render dashboard (do not upload `.env`).
 
-`spring.jpa.hibernate.ddl-auto=update` means Hibernate automatically creates or updates all tables on first run. **No migration scripts needed.**
+Important Render caveats
+- Free services sleep when idle — expect cold starts.
+- Local file storage (the `uploads/` directory) is ephemeral. Use Cloudinary, S3, or other durable object storage for production uploads (the code already supports uploading complaint PDFs to Cloudinary).
 
-Tables created:
-- `damage_report`
-- `work_order`
-- `app_user`
-- `complaint_log`
+Docker (recommended for predictable runtime)
+1. Add a `Dockerfile` (example below) and build an image.
 
----
+Example Dockerfile (recommended):
 
-### 7. Default Admin Account
-
-Created automatically on first run if no users exist:
-
-| Field    | Value                  |
-|----------|------------------------|
-| Email    | admin@potholeiq.com    |
-| Password | admin123               |
-| Role     | ADMIN                  |
-
-> ⚠️ Change this password before production deployment.
-
----
-
-## API Reference
-
-### Scanner (Real-time)
-
-| Method | Path                     | Description                                  |
-|--------|--------------------------|----------------------------------------------|
-| POST   | `/api/scanner/frame`     | Upload frame → AI detect → classify → notify |
-| POST   | `/api/scanner/location`  | Supply GPS for a pending report              |
-
-**Example — upload frame with GPS:**
-```bash
-curl -X POST http://localhost:8080/api/scanner/frame \
-  -F "image=@/path/to/photo.jpg" \
-  -F "sessionId=mobile-session-001" \
-  -F "lat=12.9716" \
-  -F "lng=77.5946"
+```dockerfile
+FROM eclipse-temurin:17-jdk-jammy
+WORKDIR /app
+COPY backend/ /app
+RUN apt-get update && apt-get install -y libopencv-dev libopenblas-dev --no-install-recommends || true
+RUN ./mvnw -f /app/pom.xml -DskipTests package || mvn -f /app/pom.xml -DskipTests package
+EXPOSE 8080
+CMD ["java", "-jar", "target/potholeiq-0.0.1-SNAPSHOT.jar"]
 ```
 
-**Example — upload without GPS (returns 202):**
-```bash
-# Step 1
-curl -X POST http://localhost:8080/api/scanner/frame \
-  -F "image=@/path/to/photo.jpg" \
-  -F "sessionId=s002"
-# Response: { "locationRequired": true, "reportId": "uuid-here" }
+Place your ONNX model in `/app/models/` at runtime or bundle it into `src/main/resources/models/` before building if you prefer no runtime step.
 
-# Step 2 — supply location
-curl -X POST "http://localhost:8080/api/scanner/location?reportId=uuid-here" \
-  -H "Content-Type: application/json" \
-  -d '{"latitude": 12.9716, "longitude": 77.5946}'
-```
+Configuration & Environment
+---------------------------
+All runtime secrets and configuration must come from environment variables in production. The application supports a `.env` file for local development via `DotenvConfig`, but in prod you must set env vars in your platform.
 
----
+Required env vars (important)
+- `PGHOST` — Postgres host (include port if needed)
+- `PGDATABASE` — Database name
+- `PGUSER` — DB username
+- `PGPASSWORD` — DB password
+- `PGSSLMODE` — e.g. `require`
+- `PGCHANNELBINDING` — e.g. `require`
+- `BREVO_USER` — Brevo SMTP username
+- `BREVO_API_KEY` — Brevo SMTP password / API key
+- `EMAIL_FROM` — Sender address used for complaint emails
 
-### Reports (Community)
+Optional / storage
+- `CLOUDINARY_URL` — if using Cloudinary for PDFs/images
+- `APP_UPLOAD_DIR` / `app.upload.dir` — local upload path (avoid for production)
 
-| Method | Path                               | Description               |
-|--------|------------------------------------|---------------------------|
-| POST   | `/api/reports/upload`              | Single-shot image upload  |
-| GET    | `/api/reports/{id}`                | Get report by ID          |
-| GET    | `/api/reports/nearby`              | PostGIS radius search     |
-| GET    | `/api/reports/my-reports`          | User's reports            |
+Storage, model and persistence notes
+----------------------------------
+- Model: the ONNX file is required for real AI inference. If missing the app runs in STUB mode and detection returns empty results.
+- Uploads: `./uploads/` is local and ephemeral on many PaaS platforms — use Cloudinary or S3 for durability.
+- Database: uses Hibernate auto-ddl (`spring.jpa.hibernate.ddl-auto=update`) — suitable for rapid iteration but consider managed migrations (Flyway/Liquibase) for long-term stability.
 
-**Nearby search:**
-```bash
-curl "http://localhost:8080/api/reports/nearby?lat=12.9716&lng=77.5946&radiusMeters=500"
-```
+Security & Operational Notes
+---------------------------
+- Replace the default admin password on first boot — a seed admin is created only if no users exist.
+- Do not commit `.env` or secret keys. Use platform-native secret stores.
+- Monitor JVM memory and native library usage: OpenCV and ONNX runtime can increase native memory usage.
+- Configure proper logging and alerting in production.
 
----
+Contributing
+------------
+Thank you for wanting to contribute! Recommended steps:
 
-### Admin Dashboard
+1. Fork the repo and create a topic branch for your change.
+2. Follow code style in `src/` and add tests where appropriate.
+3. Open a pull request with a clear description and testing steps.
 
-| Method | Path                        | Description                     |
-|--------|-----------------------------|---------------------------------|
-| GET    | `/api/admin/map-data`       | GeoJSON FeatureCollection       |
-| GET    | `/api/admin/heatmap`        | Lat/lng/count aggregates        |
-| POST   | `/api/admin/assign`         | Create work order               |
-| GET    | `/api/admin/dashboard/stats`| Counts and avg response time    |
-| GET    | `/api/admin/reports`        | Paginated filtered report list  |
+Please open issues for feature requests or bugs and tag them clearly (bug/feature/security).
 
-**Dashboard stats:**
-```bash
-curl http://localhost:8080/api/admin/dashboard/stats
-```
+License
+-------
+This project is intended to be open-source. Add a license (we recommend MIT) in a `LICENSE` file to make the terms explicit.
 
-**Map data (filter by severity):**
-```bash
-curl "http://localhost:8080/api/admin/map-data?severity=CRITICAL&status=REPORTED"
-```
+Support & Contact
+-----------------
+For questions or infra help, open an issue or contact the maintainer via the email address in `application.properties` (or replace with your project contact).
 
-**Assign to crew:**
-```bash
-curl -X POST "http://localhost:8080/api/admin/assign?reportId=<uuid>&teamName=Team+Alpha&wardEmail=ward1@gov.in"
-```
+Acknowledgements
+----------------
+- Built with Spring Boot, ONNX Runtime, OpenCV, and PostGIS.
 
----
+FAQ / Troubleshooting
+---------------------
+Q: The server starts but detections are empty.
+A: Ensure the ONNX model exists at `src/main/resources/models/pothole_detector.onnx` or `./models/pothole_detector.onnx` before startup.
 
-### Crew Management
+Q: Uploaded images disappear after restart on Render.
+A: Use Cloudinary, S3 or another durable storage provider; update `ComplaintService`/`ImageStorageService` config to offload files.
 
-| Method | Path                               | Description                     |
-|--------|------------------------------------|---------------------------------|
-| GET    | `/api/crew/assignments`            | Get assigned work orders        |
-| POST   | `/api/crew/workorders/{id}/start`  | Mark IN_PROGRESS                |
-| POST   | `/api/crew/workorders/{id}/complete`| Upload after-photo + COMPLETED |
-| POST   | `/api/crew/workorders/{id}/notes`  | Append progress notes           |
-
----
-
-## Project Structure
-
-```
-src/main/java/com/potholeiq/
-├── config/
-│   ├── DotenvConfig.java          ← .env loader (runs before Spring wires beans)
-│   ├── SecurityConfig.java        ← Permit-all + BCrypt
-│   └── WebConfig.java             ← CORS + static uploads
-├── controller/
-│   ├── ScannerController.java
-│   ├── ReportController.java
-│   ├── AdminController.java
-│   └── CrewController.java
-├── dto/                           ← Request/Response transfer objects
-├── exception/
-│   └── GlobalExceptionHandler.java
-├── model/entity/                  ← JPA entities (DamageReport, WorkOrder, User, ComplaintLog)
-├── repository/                    ← Spring Data JPA + PostGIS native queries
-├── service/
-│   ├── AiOnnxInferenceService.java   ← YOLOv8 inference
-│   ├── SeverityClassifier.java       ← OpenCV Laplacian + OTSU scoring
-│   ├── LocationService.java          ← Nominatim geocoding
-│   ├── ComplaintService.java         ← PDF generation + Brevo email
-│   ├── ReportService.java            ← Main scan pipeline orchestrator
-│   ├── WorkOrderService.java         ← Crew lifecycle management
-│   ├── ImageStorageService.java      ← File save to ./uploads/
-│   └── ExifExtractorService.java     ← GPS EXIF extraction
-└── PotholeiqApplication.java         ← Main class + admin seed runner
-```
+If you'd like, I can also:
+- Add a `LICENSE` file (MIT) and a minimal `Dockerfile` to the repo.
+- Add CI configuration for build verification (GitHub Actions).
 
 ---
-
-## Severity Classification Logic
-
-| Metric                   | Weight | Method                              |
-|--------------------------|--------|-------------------------------------|
-| Surface roughness        | 35%    | Laplacian filter standard deviation |
-| Shadow/cavity depth      | 35%    | OTSU thresholding + dark pixel ratio|
-| Physical size            | 30%    | Bbox area / image area              |
-
-| Score    | Level    | Color     | Est. Depth  |
-|----------|----------|-----------|-------------|
-| < 35     | MINOR    | `#4CAF50` | 1–3 cm      |
-| 35–60    | MODERATE | `#FFC107` | 3–8 cm      |
-| > 60     | CRITICAL | `#F44336` | 8–20 cm     |
-
-CRITICAL reports automatically trigger:
-1. PDF complaint generation (saved to `./uploads/complaints/`)
-2. Email to ward office via Brevo SMTP
-
----
-
-## Environment Variables Reference
-
-| Variable           | Maps To                          |
-|--------------------|----------------------------------|
-| `PGHOST`           | `spring.datasource.url` (host)   |
-| `PGDATABASE`       | `spring.datasource.url` (db)     |
-| `PGUSER`           | `spring.datasource.username`     |
-| `PGPASSWORD`       | `spring.datasource.password`     |
-| `PGSSLMODE`        | SSL mode in JDBC URL             |
-| `BREVO_USER`       | `spring.mail.username`           |
-| `BREVO_API_KEY`    | `spring.mail.password`           |
-| `EMAIL_FROM`       | Sender address in complaint mails|
-
-> On **Render**, set these as Environment Variables in the dashboard instead of `.env`.
-> `DotenvConfig` checks OS env vars as a fallback when `.env` is missing.
+_This README was generated/curated for production use and open-source collaboration._
