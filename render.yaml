@@ -5,9 +5,7 @@ services:
     rootDir: backend
     plan: free
     buildCommand: mvn clean package -DskipTests
-    startCommand: java -jar target/potholeiq-0.0.1-SNAPSHOT.jar
+    startCommand: java -jar target/potholeiq-0.0.1-SNAPSHOT.jar --server.port=$PORT
     envVars:
       - key: JAVA_VERSION
         value: 17
-      - key: SERVER_PORT
-        value: 8080
