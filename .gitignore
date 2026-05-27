@@ -1,0 +1,31 @@
+# Environment files
+.env
+.env.*
+!.env.example
+.agents/
+error.txt
+
+# Java / Maven
+backend/target/
+**/target/
+*.log
+
+# Spring Boot runtime files
+uploads/
+backend/uploads/
+models/
+backend/models/
+
+# Frontend / Vite / Vercel
+frontend/node_modules/
+frontend/dist/
+frontend/.vercel/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+apiendpoint.txt
+runcommand
+skills-lock.json
+backend/cloudflared.yml

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="PotholeIQ">
+  <rect width="512" height="512" rx="112" fill="#09090b"/>
+  <circle cx="256" cy="256" r="180" fill="#1f2937"/>
+  <path d="M136 308c24-54 64-84 120-84s96 30 120 84" fill="none" stroke="#facc15" stroke-width="30" stroke-linecap="round"/>
+  <path d="M160 340h192" stroke="#ef4444" stroke-width="34" stroke-linecap="round"/>
+  <circle cx="256" cy="220" r="40" fill="#f8fafc"/>
+  <path d="M256 184v72M220 220h72" stroke="#09090b" stroke-width="18" stroke-linecap="round"/>
+</svg>
